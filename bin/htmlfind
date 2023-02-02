@@ -26,6 +26,7 @@ our $ancestors;
 our $files_with_matches;
 our $as_html;
 our $as_tags;
+our $as_selectors;
 our $fancy;
 our @exclude_file;
 
@@ -39,9 +40,15 @@ Getopt::Long::GetOptions(
     'l|files-with-matches'         => \$files_with_matches,
     'T|as-tags'                    => \$as_tags,
     'H|as-html'                    => \$as_html,
+    'S|as-selectors'               => \$as_selectors,
     'f|fancy'                      => \$fancy,
     'help|?'                       => sub { usage(); exit(0); },
 ) or die(":-(\n");
+
+# if no --as-* options are specified...
+if (!$as_selectors && !$as_tags && !$as_html) {
+    $as_selectors = 1;
+}
 
 sub usage { my $thingy = $no_glob ? 'filename' : 'pattern'; print(<<"END"); }
 usage:
@@ -101,12 +108,7 @@ sub search {
     foreach my $xpath (@xpath) {
         my @nodes = $tree->findnodes($xpath);
         foreach my $node (@nodes) {
-            if ($as_html) {
-                print("$filename:\n") if !$filename_printed{$filename}++; # print each filename only once
-                my $html = $node->as_HTML();
-                $html =~ s{^}{    }gm;
-                print("$html\n");
-            } else {
+            if ($as_tags || $as_selectors) {
                 my @print_nodes = $ancestors ? ancestors($node) : ($node);
                 if ($fancy) {
                     print("$filename:\n") if !$filename_printed{$filename}++; # print each filename only once
@@ -114,11 +116,18 @@ sub search {
                 } else {
                     print("$filename:");
                 }
+                if ($as_selectors) {
+                    print(join(' ', map { as_selectors($_) } @print_nodes), "\n");
+                }
                 if ($as_tags) {
                     print(join(' ', map { as_tag($_) } @print_nodes), "\n");
-                } else {
-                    print(join(' ', map { as_selector($_) } @print_nodes), "\n");
                 }
+            }
+            if ($as_html) {
+                print("$filename:\n") if !$filename_printed{$filename}++; # print each filename only once
+                my $html = $node->as_HTML();
+                $html =~ s{^}{    }gm;
+                print("$html\n");
             }
         }
     }
@@ -140,7 +149,7 @@ sub as_tag {
     $result .= '>';
     return $result;
 }
-sub as_selector {
+sub as_selectors {
     my ($node) = @_;
     my $result = $node->tag;
     my $class = $node->attr('class');
