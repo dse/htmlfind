@@ -10,8 +10,12 @@ use File::Find qw();
 use Data::Dumper;
 use HTML::Selector::XPath 0.20 qw(selector_to_xpath);
 use HTML::TreeBuilder::XPath;
+
 eval { use Text::Glob qw(match_glob); };
-our $no_glob = $@;
+our $no_glob = $@ ? 1 : 0;
+if ($no_glob) {
+    print STDERR ("WARNING: to support globs in filenames, install Text::Glob.\n");
+}
 
 updateTagsets();
 
@@ -39,13 +43,13 @@ Getopt::Long::GetOptions(
     'help|?'                       => sub { usage(); exit(0); },
 ) or die(":-(\n");
 
-sub usage { print(<<"END"); }
+sub usage { my $thingy = $no_glob ? 'filename' : 'pattern'; print(<<"END"); }
 usage:
   htmlfind [<option> ...] [<file|dir> ...]
 options:
   -e, --selector=<selector>
   -x, --exclude=<selector>
-  -X, --exclude-file=<pattern>
+  -X, --exclude-file=<${thingy}>
   -A, --ancestors
   -a, --attributes
   -l, --files-with-matches
