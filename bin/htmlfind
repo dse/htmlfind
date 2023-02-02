@@ -1,0 +1,255 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+use open qw(:locale);
+use HTML::Tagset;
+use HTML::Valid::Tagset;
+use HTML::TreeBuilder;
+use Getopt::Long;
+use File::Find qw();
+use Data::Dumper;
+use HTML::Selector::XPath 0.20 qw(selector_to_xpath);
+use HTML::TreeBuilder::XPath;
+eval { use Text::Glob qw(match_glob); };
+our $no_glob = $@;
+
+updateTagsets();
+
+our $attributes;
+our @search;
+our @exclude;
+our $ancestors;
+our $files_with_matches;
+our $as_html;
+our $as_tags;
+our $fancy;
+our @exclude_file;
+
+Getopt::Long::Configure(qw(gnu_compat bundling no_ignore_case));
+Getopt::Long::GetOptions(
+    's|e|search|selector=s'        => \@search,
+    'x|exclude|exclude-selector=s' => \@exclude,
+    'X|exclude-file=s'             => \@exclude_file,
+    'A|ancestors|show-ancestors'   => \$ancestors,
+    'a|attributes|show-attributes' => \$attributes,
+    'l|files-with-matches'         => \$files_with_matches,
+    'T|as-tags'                    => \$as_tags,
+    'H|as-html'                    => \$as_html,
+    'f|fancy'                      => \$fancy,
+    'help|?'                       => sub { usage(); exit(0); },
+) or die(":-(\n");
+
+sub usage { print(<<"END"); }
+usage:
+  htmlfind [<option> ...] [<file|dir> ...]
+options:
+  -e, --selector=<selector>
+  -x, --exclude=<selector>
+  -X, --exclude-file=<pattern>
+  -A, --ancestors
+  -a, --attributes
+  -l, --files-with-matches
+  -T, --as-tags
+  -H, --as-html
+  -f, --fancy
+  -?, --help
+END
+
+@ARGV = expand_directories(@ARGV);
+
+my $tree;
+my $last_ARGV;
+while (<>) {
+    if (!defined $last_ARGV || $last_ARGV ne $ARGV) {
+        tty("$ARGV");
+        $last_ARGV = $ARGV;
+    }
+    if (!defined $tree) {
+        $tree = HTML::TreeBuilder::XPath->new();
+        $tree->ignore_unknown(0);
+    }
+    $tree->parse($_);
+    if (eof(\*ARGV) && defined $tree) {
+        # tty("Deleting excluded nodes...");
+        exclude($tree, @exclude);
+        # tty("Searching...");
+        search($tree, $ARGV, @search);
+        undef $tree;
+    }
+}
+tty_clear();
+
+our %exclude;
+sub exclude {
+    my ($tree, @selector) = @_;
+    my @xpath = map { selector_to_xpath($_, './') } @selector;
+    foreach my $xpath (@xpath) {
+        my @nodes = $tree->findnodes($xpath);
+        foreach my $node (@nodes) {
+            $node->delete();
+        }
+    }
+}
+our %filename_printed;
+sub search {
+    my ($tree, $filename, @selector) = @_;
+    my @xpath = map { selector_to_xpath($_, './') } @selector;
+    foreach my $xpath (@xpath) {
+        my @nodes = $tree->findnodes($xpath);
+        foreach my $node (@nodes) {
+            if ($as_html) {
+                print("$filename:\n") if !$filename_printed{$filename}++; # print each filename only once
+                my $html = $node->as_HTML();
+                $html =~ s{^}{    }gm;
+                print("$html\n");
+            } else {
+                my @print_nodes = $ancestors ? ancestors($node) : ($node);
+                if ($fancy) {
+                    print("$filename:\n") if !$filename_printed{$filename}++; # print each filename only once
+                    print("    ");
+                } else {
+                    print("$filename:");
+                }
+                if ($as_tags) {
+                    print(join(' ', map { as_tag($_) } @print_nodes), "\n");
+                } else {
+                    print(join(' ', map { as_selector($_) } @print_nodes), "\n");
+                }
+            }
+        }
+    }
+}
+sub as_tag {
+    my ($node) = @_;
+    my $result = '<' . $node->tag;
+    foreach my $attr_name ($node->all_external_attr_names) {
+        $result .= ' ' . $attr_name;
+        my $attr_value = $node->attr($attr_name);
+        if ($attr_name =~ m{^data-} || $attr_name eq 'checked' ||
+            $attr_name eq 'selected' || $attr_name eq 'disabled') {
+            if ($attr_name eq $attr_value) {
+                next;
+            }
+        }
+        $result .= '="' . encode_entities($attr_value) . '"';
+    }
+    $result .= '>';
+    return $result;
+}
+sub as_selector {
+    my ($node) = @_;
+    my $result = $node->tag;
+    my $class = $node->attr('class');
+    my @class = defined $class ? split(' ', $class) : ();
+    $result .= join('', map { ".$_" } @class);
+    my $id = $node->attr('id');
+    $result .= "#$id" if defined $id;
+    if ($attributes) {
+        my @attr_names = $node->all_external_attr_names;
+        @attr_names = grep { $_ ne "class" && $_ ne "id" && $_ ne "/" } @attr_names;
+        @attr_names = sort { lc($a) cmp lc($b) } @attr_names;
+        $result .= join('', map { "[$_]" } @attr_names);
+    }
+    return $result;
+}
+sub ancestors {
+    my ($node) = @_;
+    my @ancestors;
+    for (; $node; $node = $node->parent()) {
+        unshift(@ancestors, $node);
+    }
+    return @ancestors;
+}
+sub dumper {
+    local $Data::Dumper::Indent   = 1;
+    local $Data::Dumper::Terse    = 1;
+    local $Data::Dumper::Deepcopy = 1;
+    local $Data::Dumper::Sortkeys = 1;
+    local $Data::Dumper::Useqq    = 1;
+    return Data::Dumper::Dumper(@_);
+}
+sub updateTagsets {
+    @HTML::Tagset::p_closure_barriers           = @HTML::Valid::Tagset::p_closure_barriers;
+    %HTML::Tagset::emptyElement                 = %HTML::Valid::Tagset::emptyElement;
+    %HTML::Tagset::optionalEndTag               = %HTML::Valid::Tagset::optionalEndTag;
+    %HTML::Tagset::linkElements                 = %HTML::Valid::Tagset::linkElements;
+    %HTML::Tagset::boolean_attr                 = %HTML::Valid::Tagset::boolean_attr;
+    %HTML::Tagset::isPhraseMarkup               = %HTML::Valid::Tagset::isPhraseMarkup;
+    %HTML::Tagset::is_Possible_Strict_P_Content = %HTML::Valid::Tagset::is_Possible_Strict_P_Content;
+    %HTML::Tagset::isHeadElement                = %HTML::Valid::Tagset::isHeadElement;
+    %HTML::Tagset::isList                       = %HTML::Valid::Tagset::isList;
+    %HTML::Tagset::isTableElement               = %HTML::Valid::Tagset::isTableElement;
+    %HTML::Tagset::isFormElement                = %HTML::Valid::Tagset::isFormElement;
+    %HTML::Tagset::isHeadOrBodyElement          = %HTML::Valid::Tagset::isHeadOrBodyElement;
+    %HTML::Tagset::isKnown                      = %HTML::Valid::Tagset::isKnown;
+    %HTML::Tagset::canTighten                   = %HTML::Valid::Tagset::canTighten;
+    %HTML::Tagset::isCDATA_Parent               = %HTML::Valid::Tagset::isCDATA_Parent;
+    foreach my $key (keys %HTML::Valid::Tagset::isBodyElement) {
+        if ($key ne 'html' && $key ne 'body' && $HTML::Valid::Tagset::isBodyElement{$key}) {
+            $HTML::Tagset::isBodyElement{$key} = $HTML::Valid::Tagset::isBodyElement{$key};
+        }
+    }
+}
+sub checkTagsets {
+    foreach my $hashName (qw(isKnown
+                             isHeadElement
+                             isBodyElement
+                             isHeadOrBodyElement
+                             isTableElement
+                             is_Possible_Strict_P_Content
+                             isList
+                             isFormElement
+                             isPhraseMarkup
+                             canTighten)) {
+        printf("%-32s", $hashName);
+        foreach my $tagName (qw(html body div article main section aside)) {
+            no strict 'refs';
+            printf("  %s %s", $tagName, ${"HTML::Tagset::$hashName"}{$tagName} ? 'Y' : 'N');
+        }
+        print "\n";
+    }
+}
+sub expand_directories {
+    my (@files) = @_;
+    return map { -d $_ ? (find_files($_)) : $_ } @files;
+}
+sub find_files {
+    my $dir = shift;
+    my @files;
+    my $wanted = sub {
+        return if is_excluded($_);
+        my ($dev,$ino,$mode,$nlink,$uid,$gid);
+        return unless (($dev,$ino,$mode,$nlink,$uid,$gid) = lstat($_));
+        return if !-f _;
+        return if !/\.(?:html?|njk)$/i;
+        push(@files, $File::Find::name);
+    };
+    File::Find::find({ wanted => $wanted }, $dir);
+    return @files;
+}
+sub is_excluded {
+    my ($filename) = @_;
+    foreach my $exclude_file (@exclude_file) {
+        if ($no_glob) {
+            return 1 if $filename eq $exclude_file;
+        } else {
+            return 1 if match_glob($exclude_file, $filename);
+        }
+    }
+    return 0;
+}
+our $tty;
+BEGIN {
+    if (!open($tty, '>', '/dev/tty')) {
+        undef $tty;
+    } else {
+        $tty->autoflush(1);
+    }
+}
+sub tty {
+    print $tty ("\r" . sprintf(shift, @_) . "\e[K") if $tty;
+    # print $tty sprintf(shift, @_) . "\n" if $tty;
+}
+sub tty_clear {
+    printf $tty ("\r\e[K") if $tty;
+}
