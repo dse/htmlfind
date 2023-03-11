@@ -29,6 +29,7 @@ our $as_tags;
 our $as_selectors;
 our $fancy;
 our @exclude_file;
+our $progress;
 
 Getopt::Long::Configure(qw(gnu_compat bundling no_ignore_case));
 Getopt::Long::GetOptions(
@@ -42,6 +43,7 @@ Getopt::Long::GetOptions(
     'H|as-html'                    => \$as_html,
     'S|as-selectors'               => \$as_selectors,
     'f|fancy'                      => \$fancy,
+    'progress'                     => \$progress,
     'help|?'                       => sub { usage(); exit(0); },
 ) or die(":-(\n");
 
@@ -72,7 +74,7 @@ my $tree;
 my $last_ARGV;
 while (<>) {
     if (!defined $last_ARGV || $last_ARGV ne $ARGV) {
-        tty("$ARGV");
+        tty("$ARGV") if $progress;
         $last_ARGV = $ARGV;
     }
     if (!defined $tree) {
@@ -81,9 +83,7 @@ while (<>) {
     }
     $tree->parse($_);
     if (eof(\*ARGV) && defined $tree) {
-        # tty("Deleting excluded nodes...");
         exclude($tree, @exclude);
-        # tty("Searching...");
         search($tree, $ARGV, @search);
         undef $tree;
     }
