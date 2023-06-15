@@ -6,16 +6,9 @@ use HTML::Tagset;
 use HTML::Valid::Tagset;
 use HTML::TreeBuilder;
 use Getopt::Long;
-use File::Find qw();
 use Data::Dumper;
 use HTML::Selector::XPath 0.20 qw(selector_to_xpath);
 use HTML::TreeBuilder::XPath;
-
-eval { use Text::Glob qw(match_glob); };
-our $no_glob = $@ ? 1 : 0;
-if ($no_glob) {
-    print STDERR ("WARNING: to support globs in filenames, install Text::Glob.\n");
-}
 
 updateTagsets();
 
@@ -28,14 +21,12 @@ our $as_html;
 our $as_tags;
 our $as_selectors;
 our $fancy;
-our @exclude_file;
 our $progress;
 
 Getopt::Long::Configure(qw(gnu_compat bundling no_ignore_case));
 Getopt::Long::GetOptions(
     's|e|search|selector=s'        => \@search,
     'x|exclude|exclude-selector=s' => \@exclude,
-    'X|exclude-file=s'             => \@exclude_file,
     'A|ancestors|show-ancestors'   => \$ancestors,
     'a|attributes|show-attributes' => \$attributes,
     'l|files-with-matches'         => \$files_with_matches,
@@ -52,13 +43,13 @@ if (!$as_selectors && !$as_tags && !$as_html) {
     $as_selectors = 1;
 }
 
-sub usage { my $thingy = $no_glob ? 'filename' : 'pattern'; print(<<"END"); }
+sub usage { print(<<"END"); }
 usage:
   htmlfind [<option> ...] [<file|dir> ...]
 options:
   -e, --selector=<selector>
   -x, --exclude=<selector>
-  -X, --exclude-file=<${thingy}>
+  -X, --exclude-file=...
   -A, --ancestors
   -a, --attributes
   -l, --files-with-matches
@@ -67,8 +58,6 @@ options:
   -f, --fancy
   -?, --help
 END
-
-@ARGV = expand_directories(@ARGV);
 
 my $tree;
 my $last_ARGV;
@@ -221,35 +210,6 @@ sub checkTagsets {
         }
         print "\n";
     }
-}
-sub expand_directories {
-    my (@files) = @_;
-    return map { -d $_ ? (find_files($_)) : $_ } @files;
-}
-sub find_files {
-    my $dir = shift;
-    my @files;
-    my $wanted = sub {
-        return if is_excluded($_);
-        my ($dev,$ino,$mode,$nlink,$uid,$gid);
-        return unless (($dev,$ino,$mode,$nlink,$uid,$gid) = lstat($_));
-        return if !-f _;
-        return if !/\.(?:html?|njk)$/i;
-        push(@files, $File::Find::name);
-    };
-    File::Find::find({ wanted => $wanted }, $dir);
-    return @files;
-}
-sub is_excluded {
-    my ($filename) = @_;
-    foreach my $exclude_file (@exclude_file) {
-        if ($no_glob) {
-            return 1 if $filename eq $exclude_file;
-        } else {
-            return 1 if match_glob($exclude_file, $filename);
-        }
-    }
-    return 0;
 }
 our $tty;
 BEGIN {
