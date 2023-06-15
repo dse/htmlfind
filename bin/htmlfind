@@ -20,6 +20,8 @@ our $as_html;
 our $as_tags;
 our $as_selectors;
 our $fancy;
+our $no_filename;
+our $no_ids;
 
 Getopt::Long::Configure('gnu_getopt', 'no_ignore_case');
 Getopt::Long::GetOptions(
@@ -32,6 +34,12 @@ Getopt::Long::GetOptions(
     'H|as-html'                    => \$as_html,
     'S|as-selectors'               => \$as_selectors,
     'f|fancy'                      => \$fancy,
+
+    'no-filename' => sub { $no_filename = 1; },
+    'with-filename' => sub { $no_filename = 0; },
+    'no-ids' => sub { $no_ids = 1; },
+    'with-ids' => sub { $no_ids = 0; },
+
     'help|?'                       => sub { usage(); exit(0); },
 ) or die(":-(\n");
 
@@ -51,6 +59,7 @@ options:
   -l, --files-with-matches
   -T, --as-tags
   -H, --as-html
+      --as-open-tags
   -f, --fancy
   -?, --help
 END
@@ -97,7 +106,9 @@ sub search {
                     print("$filename:\n") if !$filename_printed{$filename}++; # print each filename only once
                     print("    ");
                 } else {
-                    print("$filename:");
+                    if (!$no_filename) {
+                        print("$filename:");
+                    }
                 }
                 if ($as_selectors) {
                     print(join(' ', map { as_selectors($_) } @print_nodes), "\n");
@@ -139,7 +150,7 @@ sub as_selectors {
     my @class = defined $class ? split(' ', $class) : ();
     $result .= join('', map { ".$_" } @class);
     my $id = $node->attr('id');
-    $result .= "#$id" if defined $id;
+    $result .= "#$id" if defined $id && !$no_ids;
     if ($attributes) {
         my @attr_names = $node->all_external_attr_names;
         @attr_names = grep { $_ ne "class" && $_ ne "id" && $_ ne "/" } @attr_names;
