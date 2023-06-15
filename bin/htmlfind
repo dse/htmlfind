@@ -46,7 +46,6 @@ usage:
 options:
   -e, --selector=<selector>
   -x, --exclude=<selector>
-  -X, --exclude-file=...
   -A, --ancestors
   -a, --attributes
   -l, --files-with-matches
