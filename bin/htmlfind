@@ -65,22 +65,24 @@ options:
   -?, --help
 END
 
-my $tree;
-my $last_ARGV;
+printf STDERR ("\@ARGV = %s\n", join(', ', @ARGV));
+
+foreach my $filename (@ARGV) {
+    my $fail = 0;
+    if (-d $filename) {
+        warn("$filename: is a directory\n");
+        $fail = 1;
+    }
+    exit(1) if $fail;
+}
+
+local $/ = undef;
 while (<>) {
-    if (!defined $last_ARGV || $last_ARGV ne $ARGV) {
-        $last_ARGV = $ARGV;
-    }
-    if (!defined $tree) {
-        $tree = HTML::TreeBuilder::XPath->new();
-        $tree->ignore_unknown(0);
-    }
+    my $tree = HTML::TreeBuilder::XPath->new();
+    $tree->ignore_unknown(0);
     $tree->parse($_);
-    if (eof(\*ARGV) && defined $tree) {
-        exclude($tree, @exclude);
-        search($tree, $ARGV, @search);
-        undef $tree;
-    }
+    exclude($tree, @exclude);
+    search($tree, $ARGV, @search);
 }
 
 our %exclude;
@@ -98,6 +100,7 @@ our %filename_printed;
 sub search {
     my ($tree, $filename, @selector) = @_;
     my @xpath = map { selector_to_xpath($_, './') } @selector;
+    # printf STDERR ("xpaths: %s\n", join(", ", @xpath));
     foreach my $xpath (@xpath) {
         my @nodes = $tree->findnodes($xpath);
         foreach my $node (@nodes) {
