@@ -65,8 +65,6 @@ options:
   -?, --help
 END
 
-printf STDERR ("\@ARGV = %s\n", join(', ', @ARGV));
-
 foreach my $filename (@ARGV) {
     my $fail = 0;
     if (-d $filename) {
